@@ -1,0 +1,616 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>GitHub Analytics Dashboard</title>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.7.0/chart.min.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.29.1/moment.min.js"></script>
+        <script
+            src="https://cdnjs.cloudflare.com/ajax/libs/alpinejs/3.10.2/cdn.min.js"
+            defer
+        ></script>
+        <script src="https://cdn.tailwindcss.com"></script>
+    </head>
+    <body class="bg-black text-white min-h-screen" x-data="dashboard()">
+        <div class="container mx-auto px-4 py-8">
+            <!-- Header -->
+            <div class="text-4xl font-bold mb-8 text-red-600">
+                GitHub Analytics
+            </div>
+
+            <!-- Input Form -->
+            <div class="bg-gray-900 rounded-lg p-6 mb-8">
+                <div
+                    class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4"
+                >
+                    <div class="space-y-2">
+                        <label class="block text-gray-400"
+                            >Personal Access Token (Optional)</label
+                        >
+                        <input
+                            type="password"
+                            x-model="token"
+                            class="w-full bg-gray-800 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-red-600"
+                            placeholder="For private repos"
+                        />
+                    </div>
+                    <div class="space-y-2">
+                        <label class="block text-gray-400"
+                            >Repository (owner/name)</label
+                        >
+                        <input
+                            type="text"
+                            x-model="repo"
+                            placeholder="netflix/zuul"
+                            class="w-full bg-gray-800 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-red-600"
+                        />
+                    </div>
+                    <div class="space-y-2">
+                        <label class="block text-gray-400">Start Date</label>
+                        <input
+                            type="date"
+                            x-model="startDate"
+                            class="w-full bg-gray-800 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-red-600"
+                        />
+                    </div>
+                    <div class="space-y-2">
+                        <label class="block text-gray-400">End Date</label>
+                        <input
+                            type="date"
+                            x-model="endDate"
+                            class="w-full bg-gray-800 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-red-600"
+                        />
+                    </div>
+                </div>
+
+                <!-- Excluded Users Management -->
+                <div class="mt-4">
+                    <label class="block text-gray-400 mb-2"
+                        >Excluded Users (Staff/Bots)</label
+                    >
+                    <div class="flex flex-wrap gap-2 mb-2">
+                        <template x-for="user in excludedUsers" :key="user">
+                            <span
+                                class="bg-gray-800 px-3 py-1 rounded-full flex items-center"
+                            >
+                                <span x-text="user"></span>
+                                <button
+                                    @click="removeExcludedUser(user)"
+                                    class="ml-2 text-red-500 hover:text-red-400"
+                                >
+                                    &times;
+                                </button>
+                            </span>
+                        </template>
+                    </div>
+                    <div class="flex gap-2">
+                        <input
+                            type="text"
+                            x-model="newExcludedUser"
+                            @keydown.enter="addExcludedUser"
+                            placeholder="Add username to exclude"
+                            class="flex-1 bg-gray-800 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-red-600"
+                        />
+                        <button
+                            @click="addExcludedUser"
+                            class="bg-red-600 hover:bg-red-700 px-4 py-2 rounded transition duration-200"
+                        >
+                            Add
+                        </button>
+                    </div>
+                </div>
+
+                <button
+                    @click="fetchData"
+                    class="mt-6 bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-6 rounded transition duration-200"
+                >
+                    Analyze
+                </button>
+            </div>
+
+            <!-- Loading State -->
+            <div
+                x-show="loading"
+                class="flex items-center justify-center space-x-2"
+            >
+                <div
+                    class="animate-spin rounded-full h-8 w-8 border-b-2 border-red-600"
+                ></div>
+                <span class="text-gray-400">Fetching repository data...</span>
+            </div>
+
+            <!-- Results Section -->
+            <div x-show="!loading && hasData">
+                <!-- KPI Cards -->
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                    <div class="bg-gray-900 rounded-lg p-6">
+                        <div class="text-gray-400 mb-2">
+                            Merged Pull Requests
+                        </div>
+                        <div class="text-3xl font-bold" x-text="stats.prCount">
+                            -
+                        </div>
+                    </div>
+                    <div class="bg-gray-900 rounded-lg p-6">
+                        <div class="text-gray-400 mb-2">Contributors</div>
+                        <div
+                            class="text-3xl font-bold"
+                            x-text="stats.contributorCount"
+                        >
+                            -
+                        </div>
+                    </div>
+                    <div class="bg-gray-900 rounded-lg p-6">
+                        <div class="text-gray-400 mb-2">
+                            Average PR Review Time
+                        </div>
+                        <div
+                            class="text-3xl font-bold"
+                            x-text="stats.avgReviewTime"
+                        >
+                            -
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Charts -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+                    <div class="bg-gray-900 rounded-lg p-6">
+                        <h3 class="text-xl mb-4">PRs by Label</h3>
+                        <canvas id="labelChart"></canvas>
+                    </div>
+                    <div class="bg-gray-900 rounded-lg p-6">
+                        <h3 class="text-xl mb-4">PRs Over Time</h3>
+                        <canvas id="timelineChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- PR List -->
+                <div class="bg-gray-900 rounded-lg p-6">
+                    <h3 class="text-xl mb-4 flex justify-between items-center">
+                        <span>Pull Requests</span>
+                        <input
+                            type="text"
+                            x-model="searchTerm"
+                            placeholder="Search PRs..."
+                            class="bg-gray-800 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-600"
+                        />
+                    </h3>
+                    <div class="overflow-x-auto">
+                        <table class="w-full">
+                            <thead>
+                                <tr class="text-left border-b border-gray-800">
+                                    <th class="py-3 px-4">Title</th>
+                                    <th class="py-3 px-4">Author</th>
+                                    <th class="py-3 px-4">Labels</th>
+                                    <th class="py-3 px-4">Created</th>
+                                    <th class="py-3 px-4">Merged</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <template
+                                    x-for="pr in filteredPRs"
+                                    :key="pr.number"
+                                >
+                                    <tr
+                                        class="border-b border-gray-800 hover:bg-gray-800"
+                                    >
+                                        <td class="py-3 px-4">
+                                            <a
+                                                :href="pr.url"
+                                                target="_blank"
+                                                class="text-red-500 hover:text-red-400"
+                                                x-text="pr.title"
+                                            ></a>
+                                        </td>
+                                        <td
+                                            class="py-3 px-4"
+                                            x-text="pr.author"
+                                        ></td>
+                                        <td class="py-3 px-4">
+                                            <div class="flex flex-wrap gap-1">
+                                                <template
+                                                    x-for="label in pr.labels"
+                                                    :key="label"
+                                                >
+                                                    <span
+                                                        class="px-2 py-1 rounded-full text-xs bg-gray-700"
+                                                        x-text="label"
+                                                    ></span>
+                                                </template>
+                                            </div>
+                                        </td>
+                                        <td
+                                            class="py-3 px-4"
+                                            x-text="formatDate(pr.createdAt)"
+                                        ></td>
+                                        <td
+                                            class="py-3 px-4"
+                                            x-text="formatDate(pr.mergedAt)"
+                                        ></td>
+                                    </tr>
+                                </template>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <script>
+            function dashboard() {
+                return {
+                    token: "",
+                    repo: "",
+                    startDate: moment()
+                        .subtract(1, "month")
+                        .format("YYYY-MM-DD"),
+                    endDate: moment().format("YYYY-MM-DD"),
+                    loading: false,
+                    hasData: false,
+                    excludedUsers: ["dependabot", "renovate", "github-actions"],
+                    newExcludedUser: "",
+                    searchTerm: "",
+                    stats: {
+                        prCount: 0,
+                        contributorCount: 0,
+                        avgReviewTime: "0 days",
+                    },
+                    pullRequests: [],
+                    labelChart: null,
+                    timelineChart: null,
+
+                    get filteredPRs() {
+                        return this.pullRequests.filter(
+                            (pr) =>
+                                pr.title
+                                    .toLowerCase()
+                                    .includes(this.searchTerm.toLowerCase()) ||
+                                pr.author
+                                    .toLowerCase()
+                                    .includes(this.searchTerm.toLowerCase()) ||
+                                pr.labels.some((label) =>
+                                    label
+                                        .toLowerCase()
+                                        .includes(
+                                            this.searchTerm.toLowerCase(),
+                                        ),
+                                ),
+                        );
+                    },
+
+                    addExcludedUser() {
+                        if (
+                            this.newExcludedUser &&
+                            !this.excludedUsers.includes(this.newExcludedUser)
+                        ) {
+                            this.excludedUsers.push(this.newExcludedUser);
+                            this.newExcludedUser = "";
+                        }
+                    },
+
+                    removeExcludedUser(user) {
+                        this.excludedUsers = this.excludedUsers.filter(
+                            (u) => u !== user,
+                        );
+                    },
+
+                    formatDate(date) {
+                        return moment(date).format("MMM D, YYYY");
+                    },
+
+                    async fetchData() {
+                        if (!this.repo) {
+                            alert("Please enter a repository");
+                            return;
+                        }
+
+                        this.loading = true;
+                        this.hasData = false;
+
+                        try {
+                            const [owner, name] = this.repo.split("/");
+                            const headers = {
+                                "Content-Type": "application/json",
+                            };
+
+                            if (this.token) {
+                                headers["Authorization"] =
+                                    `bearer ${this.token}`;
+                            }
+
+                            const query = `
+                            query($owner: String!, $name: String!) {
+                                repository(owner: $owner, name: $name) {
+                                    pullRequests(states: MERGED, first: 100, orderBy: {field: CREATED_AT, direction: DESC}) {
+                                        nodes {
+                                            number
+                                            title
+                                            url
+                                            createdAt
+                                            mergedAt
+                                            author {
+                                                login
+                                            }
+                                            labels(first: 10) {
+                                                nodes {
+                                                    name
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        `;
+
+                            const response = await fetch(
+                                "https://api.github.com/graphql",
+                                {
+                                    method: "POST",
+                                    headers,
+                                    body: JSON.stringify({
+                                        query,
+                                        variables: { owner, name },
+                                    }),
+                                },
+                            );
+
+                            const data = await response.json();
+
+                            if (data.errors) {
+                                throw new Error(data.errors[0].message);
+                            }
+
+                            this.processData(
+                                data.data.repository.pullRequests.nodes,
+                            );
+                        } catch (error) {
+                            if (error.message.includes("Bad credentials")) {
+                                alert(
+                                    "Invalid token or insufficient permissions",
+                                );
+                            } else {
+                                alert(`Error: ${error.message}`);
+                            }
+                        } finally {
+                            this.loading = false;
+                        }
+                    },
+
+                    processData(prs) {
+                        const filteredPRs = prs.filter((pr) => {
+                            const author = pr.author.login.toLowerCase();
+                            return !this.excludedUsers.some((user) =>
+                                author.includes(user.toLowerCase()),
+                            );
+                        });
+
+                        // Process PRs for the table view
+                        this.pullRequests = filteredPRs.map((pr) => ({
+                            number: pr.number,
+                            title: pr.title,
+                            url: pr.url,
+                            author: pr.author.login,
+                            labels: pr.labels.nodes.map((n) => n.name),
+                            createdAt: pr.createdAt,
+                            mergedAt: pr.mergedAt,
+                        }));
+
+                        // Update stats
+                        this.stats.prCount = filteredPRs.length;
+                        this.stats.contributorCount = new Set(
+                            filteredPRs.map((pr) => pr.author.login),
+                        ).size;
+
+                        const avgTime =
+                            filteredPRs.reduce((acc, pr) => {
+                                return (
+                                    acc +
+                                    (new Date(pr.mergedAt) -
+                                        new Date(pr.createdAt))
+                                );
+                            }, 0) / filteredPRs.length;
+
+                        this.stats.avgReviewTime = `${Math.round(avgTime / (1000 * 60 * 60 * 24))} days`;
+
+                        // Update charts
+                        this.updateCharts(filteredPRs);
+                        this.hasData = true;
+                    },
+
+                    updateCharts(prs) {
+                        // Label Chart
+                        const labelCounts = {};
+                        prs.forEach((pr) => {
+                            pr.labels.nodes.forEach((label) => {
+                                labelCounts[label.name] =
+                                    (labelCounts[label.name] || 0) + 1;
+                            });
+                        });
+
+                        if (this.labelChart) {
+                            this.labelChart.destroy();
+                        }
+
+                        this.labelChart = new Chart("labelChart", {
+                            type: "doughnut",
+                            data: {
+                                labels: Object.keys(labelCounts),
+                                datasets: [
+                                    {
+                                        data: Object.values(labelCounts),
+                                        backgroundColor: [
+                                            "#E50914",
+                                            "#B81D24",
+                                            "#831010",
+                                            "#E50914",
+                                            "#B81D24",
+                                            "#831010",
+                                        ],
+                                    },
+                                ],
+                            },
+                            options: {
+                                responsive: true,
+                                plugins: {
+                                    legend: {
+                                        position: "right",
+                                        labels: {
+                                            color: "#fff",
+                                        },
+                                    },
+                                },
+                            },
+                        });
+
+                        // Timeline Chart
+                        const timeData = {};
+                        prs.forEach((pr) => {
+                            const month = moment(pr.createdAt).format(
+                                "MMM YYYY",
+                            );
+                            timeData[month] = (timeData[month] || 0) + 1;
+                        });
+
+                        if (this.timelineChart) {
+                            this.timelineChart.destroy();
+                        }
+
+                        this.timelineChart = new Chart("timelineChart", {
+                            type: "line",
+                            data: {
+                                labels: Object.keys(timeData),
+                                datasets: [
+                                    {
+                                        label: "Pull Requests",
+                                        data: Object.values(timeData),
+                                        borderColor: "#E50914",
+                                        backgroundColor:
+                                            "rgba(229, 9, 20, 0.1)",
+                                        tension: 0.4,
+                                        fill: true,
+                                    },
+                                ],
+                            },
+                            options: {
+                                responsive: true,
+                                plugins: {
+                                    legend: {
+                                        labels: {
+                                            color: "#fff",
+                                        },
+                                    },
+                                },
+                                scales: {
+                                    y: {
+                                        beginAtZero: true,
+                                        ticks: {
+                                            color: "#fff",
+                                            stepSize: 1,
+                                        },
+                                        grid: {
+                                            color: "rgba(255, 255, 255, 0.1)",
+                                        },
+                                    },
+                                    x: {
+                                        ticks: {
+                                            color: "#fff",
+                                        },
+                                        grid: {
+                                            color: "rgba(255, 255, 255, 0.1)",
+                                        },
+                                    },
+                                },
+                            },
+                        });
+                    },
+
+                    init() {
+                        // Set default dates
+                        this.startDate = moment()
+                            .subtract(1, "month")
+                            .format("YYYY-MM-DD");
+                        this.endDate = moment().format("YYYY-MM-DD");
+
+                        // Handle keyboard shortcuts
+                        window.addEventListener("keydown", (e) => {
+                            // Ctrl/Cmd + Enter to trigger analysis
+                            if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+                                this.fetchData();
+                            }
+                        });
+
+                        // Set up intersection observer for lazy loading
+                        const observer = new IntersectionObserver((entries) => {
+                            entries.forEach((entry) => {
+                                if (entry.isIntersecting) {
+                                    const img = entry.target;
+                                    img.src = img.dataset.src;
+                                    observer.unobserve(img);
+                                }
+                            });
+                        });
+
+                        // Observe avatar images when they're added
+                        this.$watch("pullRequests", () => {
+                            setTimeout(() => {
+                                document
+                                    .querySelectorAll("img[data-src]")
+                                    .forEach((img) => {
+                                        observer.observe(img);
+                                    });
+                            }, 0);
+                        });
+
+                        // Handle window resize for charts
+                        let resizeTimer;
+                        window.addEventListener("resize", () => {
+                            clearTimeout(resizeTimer);
+                            resizeTimer = setTimeout(() => {
+                                if (this.hasData) {
+                                    this.updateCharts(this.pullRequests);
+                                }
+                            }, 250);
+                        });
+                    },
+                };
+            }
+
+            // Helper function for date formatting
+            function formatTimeAgo(date) {
+                return moment(date).fromNow();
+            }
+
+            // Helper function for number formatting
+            function formatNumber(num) {
+                return new Intl.NumberFormat().format(num);
+            }
+        </script>
+
+        <!-- Toast Notifications -->
+        <div class="fixed bottom-4 right-4 z-50" x-data="{ toasts: [] }">
+            <template x-for="(toast, index) in toasts" :key="index">
+                <div
+                    x-show="toast.show"
+                    x-transition:enter="transition ease-out duration-300"
+                    x-transition:enter-start="transform translate-y-2 opacity-0"
+                    x-transition:enter-end="transform translate-y-0 opacity-100"
+                    x-transition:leave="transition ease-in duration-100"
+                    x-transition:leave-start="transform translate-y-0 opacity-100"
+                    x-transition:leave-end="transform translate-y-2 opacity-0"
+                    class="mb-2 bg-gray-900 text-white px-6 py-3 rounded-lg shadow-lg flex items-center"
+                    :class="toast.type === 'error' ? 'bg-red-600' : 'bg-gray-900'"
+                >
+                    <span x-text="toast.message"></span>
+                    <button
+                        @click="toast.show = false"
+                        class="ml-4 text-white hover:text-gray-200"
+                    >
+                        &times;
+                    </button>
+                </div>
+            </template>
+        </div>
+    </body>
+</html>
